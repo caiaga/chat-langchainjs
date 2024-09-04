@@ -11,8 +11,7 @@ import {
 } from "@langchain/core/runnables";
 import { HumanMessage, AIMessage, BaseMessage } from "@langchain/core/messages";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
-import { ChatFireworks } from "@langchain/community/chat_models/fireworks";
+import { OpenAIEmbeddings } from "@langchain/openai";
 import { StringOutputParser } from "@langchain/core/output_parsers";
 import {
   PromptTemplate,
@@ -22,6 +21,8 @@ import {
 
 import weaviate, { ApiKey } from "weaviate-ts-client";
 import { WeaviateStore } from "@langchain/weaviate";
+import { Chroma } from "@langchain/community/vectorstores/chroma";
+import { OllamaEmbeddings } from "@langchain/community/embeddings/ollama";
 
 export const runtime = "edge";
 
@@ -63,28 +64,13 @@ type RetrievalChainInput = {
 };
 
 const getRetriever = async () => {
-  if (
-    !process.env.WEAVIATE_INDEX_NAME ||
-    !process.env.WEAVIATE_API_KEY ||
-    !process.env.WEAVIATE_URL
-  ) {
-    throw new Error(
-      "WEAVIATE_INDEX_NAME, WEAVIATE_API_KEY and WEAVIATE_URL environment variables must be set",
-    );
-  }
-
-  const client = weaviate.client({
-    scheme: "https",
-    host: process.env.WEAVIATE_URL,
-    apiKey: new ApiKey(process.env.WEAVIATE_API_KEY),
+  const embeddings = new OllamaEmbeddings({
+    model: "nomic-embed-text",
   });
-  const vectorstore = await WeaviateStore.fromExistingIndex(
-    new OpenAIEmbeddings({}),
+  const vectorstore = await Chroma.fromExistingCollection(
+    embeddings,
     {
-      client,
-      indexName: process.env.WEAVIATE_INDEX_NAME,
-      textKey: "text",
-      metadataKeys: ["source", "title"],
+      collectionName: process.env.COLLECTION_NAME
     },
   );
   return vectorstore.asRetriever({ k: 6 });
@@ -204,29 +190,17 @@ const createChain = (llm: BaseChatModel, retriever: Runnable) => {
   ]);
 };
 
+import { ChatOllama } from "@langchain/community/chat_models/ollama";
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const input = body.input;
     const config = body.config;
 
-    let llm;
-    if (config.configurable.llm === "openai_gpt_3_5_turbo") {
-      llm = new ChatOpenAI({
-        modelName: "gpt-3.5-turbo-1106",
-        temperature: 0,
-      });
-    } else if (config.configurable.llm === "fireworks_mixtral") {
-      llm = new ChatFireworks({
-        modelName: "accounts/fireworks/models/mixtral-8x7b-instruct",
-        temperature: 0,
-      });
-    } else {
-      throw new Error(
-        "Invalid LLM option passed. Must be 'openai' or 'mixtral'. Received: " +
-          config.llm,
-      );
-    }
+    const llm = new ChatOllama({
+      model: "mistral"
+    });
 
     const retriever = await getRetriever();
     const answerChain = createChain(llm, retriever);

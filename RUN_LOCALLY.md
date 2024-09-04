@@ -42,7 +42,7 @@ docker pull postgres
 Then, run this command to start the image.
 
 ```shell
-docker run --name postgres -e POSTGRES_PASSWORD=mysecretpassword -d postgres
+docker run --name postgres -e POSTGRES_PASSWORD=password -d postgres
 ```
 
 Change "mysecretpassword" to your desired password.
